@@ -1,0 +1,10 @@
+{
+    "name": "mdrmediathek",
+    "hostprefix": "mdr.de",
+    "displayname": "MDR Mediathek",
+    "version": "0.1",
+    "authentication": "no",
+    "module": "mdrmediathek.php",
+    "class": "SynoFileHostingMDRMediathek",
+    "description": "Download Videos from MDR Mediathek"
+}
