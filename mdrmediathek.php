@@ -2,90 +2,56 @@
 
 /**
  * @author Daniel Gehn <me@theinad.com>
- * @version 0.1
+ * @version 0.2a
  * @copyright 2015 Daniel Gehn
  * @license http://opensource.org/licenses/MIT Licensed under MIT License
  */
 
-class SynoFileHostingMDRMediathek {
-    private $Url;
-    private $Username;
-    private $Password;
-    private $HostInfo;
+require_once 'provider.php';
 
-    private $LogPath = '/tmp/mdr-mediathek.log';
-    private $LogEnabled = false;
+class SynoFileHostingMDRMediathek extends TheiNaDProvider {
 
-    public function __construct($Url, $Username = '', $Password = '', $HostInfo = '') {
-        $this->Url = $Url;
-        $this->Username = $Username;
-        $this->Password = $Password;
-        $this->HostInfo = $HostInfo;
-
-        $this->DebugLog("URL: $Url");
-    }
-
-    //This function returns download url.
-    public function GetDownloadInfo() {
-        $ret = FALSE;
-
-        $this->DebugLog("GetDownloadInfo called");
-
-        $ret = $this->Download();
-
-        return $ret;
-    }
-
-    public function onDownloaded()
-    {
-    }
-
-    public function Verify($ClearCookie = '')
-    {
-        $this->DebugLog("Verifying User");
-
-        return USER_IS_PREMIUM;
-    }
+    protected $LogPath = '/tmp/mdr-mediathek.log';
 
     //This function gets the download url
-    private function Download() {
+    public function GetDownloadInfo() {
         $this->DebugLog("Getting download url $this->Url");
 
-        $curl = curl_init();
+        $rawXML = $this->curlRequest($this->Url);
 
-        curl_setopt($curl, CURLOPT_URL, $this->Url);
-        curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($curl, CURLOPT_USERAGENT, DOWNLOAD_STATION_USER_AGENT);
-        curl_setopt($curl, CURLOPT_FOLLOWLOCATION, true);
-
-        $rawXML = curl_exec($curl);
-
-        if(!$rawXML)
+        if($rawXML === null)
         {
-            $this->DebugLog("Failed to retrieve Website. Error Info: " . curl_error($curl));
             return false;
         }
 
-        curl_close($curl);
-
         if(preg_match('#dataURL:\'(.*?)\'#si', $rawXML, $match) === 1)
         {
-            $curl = curl_init();
+            $RawXMLData = $this->curlRequest('http://www.mdr.de/' . $match[1]);
 
-            curl_setopt($curl, CURLOPT_URL, 'http://www.mdr.de/' . $match[1]);
-            curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($curl, CURLOPT_USERAGENT, DOWNLOAD_STATION_USER_AGENT);
-            curl_setopt($curl, CURLOPT_FOLLOWLOCATION, true);
-
-            $RawXMLData = curl_exec($curl);
-
-            if(!$RawXMLData)
+            if($RawXMLData === null)
             {
-                $this->DebugLog("Failed to retrieve XML. Error Info: " . curl_error($curl));
                 return false;
             }
 
-            curl_close($curl);
+            $match = array();
+            $title = "";
+
+            if(preg_match('#<broadcastSeriesName>(.*?)<\/broadcastSeriesName>#is', $RawXMLData, $match) == 1)
+            {
+                $title = $match[1];
+            }
+
+            $match = array();
+            $subtitle = "";
+
+            if(preg_match('#<broadcastName>(.*?)<\/broadcastName>#is', $RawXMLData, $match) == 1)
+            {
+                $subtitle = $match[1];
+            }
+
+            if($subtitle != "") {
+                $title .= ' - ' . $subtitle;
+            }
 
             preg_match_all('#<asset>(.*?)<\/asset>#si', $RawXMLData, $matches);
 
@@ -122,29 +88,38 @@ class SynoFileHostingMDRMediathek {
 
             if($bestSource['url'] !== '')
             {
+                $url = trim($bestSource['url']);
+
                 $DownloadInfo = array();
-                $DownloadInfo[DOWNLOAD_URL] = trim($bestSource['url']);
+                $DownloadInfo[DOWNLOAD_URL] = $url;
+
+                $filename = "";
+                $pathinfo = pathinfo($url);
+
+                if(empty($title))
+                {
+                    $filename = $pathinfo['basename'];
+                }
+                else
+                {
+                    $filename .= $title . '.' . $pathinfo['extension'];
+                }
+
+                $DownloadInfo[DOWNLOAD_FILENAME] = $this->safeFilename($filename);
 
                 return $DownloadInfo;
             }
 
             $this->DebugLog("Failed to determine best quality: " . json_encode($matches[1]));
 
-            return FALSE;
+            return false;
 
         }
 
         $this->DebugLog("Couldn't identify player meta");
 
-        return FALSE;
+        return false;
     }
 
-    private function DebugLog($message)
-    {
-        if($this->LogEnabled === true)
-        {
-            file_put_contents($this->LogPath, $message . "\n", FILE_APPEND);
-        }
-    }
 }
 ?>
